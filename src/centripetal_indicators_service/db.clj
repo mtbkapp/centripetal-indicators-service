@@ -1,5 +1,9 @@
 (ns centripetal-indicators-service.db
   (:require [cheshire.core :as json]
+            [clojure.java.io :as io]
+            [clojure.set :as sets]
+            [clojure.spec.alpha :as spec]
+            [clojure.string :as string]
             [clojure.tools.logging :as log]
             [com.stuartsierra.component :as component]))
 
@@ -40,12 +44,86 @@
 
 (defn get-positions
   [index path v]
-  (get-in index (into path [::values v])))
+  (get-in index (concat path [::values v])))
+
+; simple matching language
+
+(spec/def ::query.equals
+  (spec/cat :op-token #(= "=" %)
+            :path ::query.path
+            :value ::query.value))
+
+(spec/def ::query.path
+  (spec/and string?
+            (spec/conformer
+              (fn [path]
+                (map keyword (string/split path #"\."))))))
+
+(spec/def ::query.value
+  (spec/or :bool boolean?
+           :number number?
+           :string string?))
+
+(spec/def ::query.boolean-expr
+  (spec/or :equals ::query.equals
+           :or ::query.or
+           :and ::query.and
+           :not ::query.not))
+
+(spec/def ::query.not
+  (spec/cat :op-token #(= "not" %)
+            :expr ::query.boolean-expr))
+
+(spec/def ::query.or
+  (spec/cat :op-token #(= "or" %)
+            :operands (spec/+ ::query.boolean-expr)))
+
+(spec/def ::query.and
+  (spec/cat :op-token #(= "and" %)
+            :operands (spec/+ ::query.boolean-expr)))
+
+(spec/def ::query ::query.boolean-expr)
+
+(defn parse-query
+  [query]
+  (let [parsed (spec/conform ::query query)]
+    (if (= ::spec/invalid parsed)
+      (throw (IllegalArgumentException. "Invalid query"))
+      parsed)))
+
+(def exec-query* nil)
+(defmulti exec-query*
+  (fn [db-data [op :as parsed-query]]
+    op))
+
+(defmethod exec-query* :equals
+  [{:keys [index]} [_ {path :path [_ v] :value}]]
+  (get-positions index path v))
+
+(defmethod exec-query* :not
+  [{:keys [docs] :as db-data} [_ {:keys [expr]}]]
+  (let [positions (exec-query* db-data expr)]
+    (sets/difference (set (range (count docs))) positions)))
+
+(defmethod exec-query* :and
+  [db-data [_ {:keys [operands]}]]
+  (->> (map #(exec-query* db-data %) operands)
+       (apply sets/intersection)))
+
+(defmethod exec-query* :or
+  [db-data [_ {:keys [operands]}]]
+  (->> (map #(exec-query* db-data %) operands)
+       (apply sets/union)))
+
+(defn exec-query
+  [{:keys [docs] :as db-data} query]
+  (let [positions (exec-query* db-data (parse-query query))]
+    (map #(nth docs %) positions)))
 
 (defprotocol Database
-  (count-records [db])
+  (get-all [db])
   (find-by-id [db id])
-  (find-docs [db path v]))
+  (find-docs [db query]))
 
 (defrecord JsonFileDb
   [json-file data]
@@ -62,17 +140,14 @@
   (stop [this]
     (assoc this :data nil))
   Database
-  (count-records [_]
-    (count (:docs data)))
+  (get-all
+    [_]
+    (:docs data))
   (find-by-id
     [_ id]
-    (let [{:keys [docs index]} data]
-      (when-let [[first-position :as positions] (seq (get-positions index [:id] id))]
-        (when (< 1 (count positions))
-          (log/warn "Found more than one document with id" {:id id}))
-        (nth docs first-position))))
-  (find-docs [_ path v]
-    ))
+    (first (exec-query data ["=" "id" id])))
+  (find-docs [_ query]
+    (exec-query data query)))
 
 (defn json-file-db
   [json-file]

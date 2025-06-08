@@ -16,21 +16,24 @@ FIXME: explanation
 
 FIXME: listing of options this app accepts.
 
-## Examples
+## Query Language
 
-...
-
-### Bugs
-
-...
-
-### Any Other Sections
-### That You Think
-### Might be Useful
+### Grammar
+```
+equals = "[" "=" path value "]"
+value = "true" | "false" | number | string
+path = json-key | json-key "." path 
+json-key = string
+or = "[" "or" bool-exp+ "]" 
+and = "[" "and" bool-exp+ "]" 
+not = "[" "not" bool-exp "]"
+bool-exp = equals | or | and | not
+query = bool-exp
+```
 
 ## License
 
-Copyright © 2025 FIXME
+Copyright © 2025 Jason Kapp 
 
 This program and the accompanying materials are made available under the
 terms of the Eclipse Public License 2.0 which is available at

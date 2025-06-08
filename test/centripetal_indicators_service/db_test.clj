@@ -1,6 +1,7 @@
 (ns centripetal-indicators-service.db-test
   (:require [centripetal-indicators-service.db :as db]
             [clojure.java.io :as io]
+            
             [clojure.test :refer [deftest testing is use-fixtures]]
             [com.stuartsierra.component :as component]))
 
@@ -65,4 +66,100 @@
       (is (= id (:id doc)))))
   (testing "given id does not identify a doc"
     (is (nil? (db/find-by-id *db* "doughnuts")))))
- 
+
+(deftest test-parse-query
+  (testing "throws on invalid query"
+    (is (thrown? IllegalArgumentException (db/parse-query ""))))
+  (testing "single field equality"
+    (let [query ["=" "indicators.type" "IPv4"]]
+      (is (= [:equals {:op-token "="
+                       :path [:indicators :type]
+                       :value [:string "IPv4"]}]
+             (db/parse-query query)))))
+  (testing "not operator"
+    (let [query ["not" ["=" "indicators.type" "IPv4"]]]
+      (is (= [:not {:op-token "not"
+                    :expr [:equals {:op-token "="
+                                    :path [:indicators :type]
+                                    :value [:string "IPv4"]}]}]
+             (db/parse-query query)))))
+  (testing "and operator"
+    (let [query ["and" 
+                 ["=" "indicators.type" "IPv4"]
+                 ["=" "tlp" "green"]]]
+      (is (= [:and {:op-token "and" 
+                    :operands [[:equals {:op-token "="
+                                         :path [:indicators :type]
+                                         :value [:string "IPv4"]}]
+                               [:equals {:op-token "="
+                                         :path [:tlp]
+                                         :value [:string "green"]}]]}]
+             (db/parse-query query)))))
+  (testing "or operator"
+    (let [query ["or" 
+                 ["=" "indicators.type" "IPv4"]
+                 ["=" "tlp" "green"]]]
+      (is (= [:or {:op-token "or" 
+                    :operands [[:equals {:op-token "="
+                                         :path [:indicators :type]
+                                         :value [:string "IPv4"]}]
+                               [:equals {:op-token "="
+                                         :path [:tlp]
+                                         :value [:string "green"]}]]}]
+             (db/parse-query query))))))
+
+(deftest test-exec-query
+  (let [db-data (-> *db* :data)]
+    (testing "single equality"
+      (let [query ["=" "tlp" "green"]
+            results (db/exec-query db-data query)]
+        (is (= 83 (count results)))
+        (is (= #{"green"} (into #{} (map :tlp) results))))
+      (let [query ["=" "indicators.type" "IPv4"]
+            results (db/exec-query db-data query)
+            types (map #(into #{} 
+                              (map :type) 
+                              (:indicators %)) 
+                       results)]
+        (is (= 69 (count results)))
+        (is (every? #(contains? % "IPv4") types))))
+    (testing "not"
+      (let [query ["not" ["=" "tlp" "green"]]
+            results (db/exec-query db-data query)
+            tlps (into #{} (map :tlp) results)]
+        (is (= 17 (count results)))
+        (is (not (contains? tlps "green")))))
+    (testing "and"
+      (let [query ["and" 
+                   ["=" "tlp" "green"]
+                   ["=" "indicators.type" "IPv4"]]
+            results (db/exec-query db-data query)
+            tlps (into #{} (map :tlp) results) 
+            types (map #(into #{} 
+                              (map :type) 
+                              (:indicators %)) 
+                       results)]
+        (is (= 65 (count results)))
+        (is (= #{"green"} tlps))
+        (is (every? #(contains? % "IPv4") types))))
+    (testing "or"
+      (let [query ["or" 
+                   ["=" "tlp" "green"]
+                   ["=" "indicators.type" "IPv4"]]
+            results (db/exec-query db-data query)
+            slimed-results (map (fn [{:keys [tlp indicators]}]
+                                  {:tlp tlp 
+                                   :types (into #{} (map :type) indicators)})
+                                results)]
+        (is (= 87 (count results)))
+        (is (every? (fn [{:keys [tlp types]}]
+                      (or (= tlp "green")
+                          (contains? types "IPv4")))
+                    slimed-results))))))
+
+(deftest test-find-docs
+  (let [query ["=" "tlp" "green"]
+        results (db/find-docs *db* query)]
+    (is (= 83 (count results)))
+    (is (= #{"green"} (into #{} (map :tlp) results)))))
+
