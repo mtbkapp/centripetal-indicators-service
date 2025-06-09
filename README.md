@@ -117,6 +117,11 @@ $ ./docker-build.sh
 $ ./docker-run.sh
 ```
 
+## Inspiration
+* PostgreSQL's generalized inverted indexes (GIN)
+* [Pedestal Documentation](https://pedestal.io/pedestal/0.7/index.html)
+* [Clojure Spec](https://clojure.org/guides/spec) for query language validation and specification
+
 ## License
 
 Copyright © 2025 Jason Kapp 
