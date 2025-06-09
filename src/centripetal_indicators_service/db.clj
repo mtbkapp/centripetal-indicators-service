@@ -1,4 +1,11 @@
 (ns centripetal-indicators-service.db
+  "Provides a read only database of sorts. Implemented as three pieces:
+  1. A com.stuartsierra.component to integrate with the rest of the system and
+     read the documents from the JSON file.
+  2. A means to index the JSON documents into a structure inspired by
+     PostgreSQLs Generalized Inverted Indexes (GIN).
+  3. A specification via clojure.spec of a basic query language used to search
+     the index for matching documents."
   (:require [cheshire.core :as json]
             [clojure.set :as sets]
             [clojure.spec.alpha :as spec]
@@ -9,7 +16,54 @@
 
 (set! *warn-on-reflection* true)
 
-; like PostgreSQLs Generialized Inverted Indexes (GIN)
+; GIN inspired Index
+; Example:
+; 
+; Input Donut Purchase Document:
+; {
+;   "donuts": [
+;     {
+;       "type": "glazed",
+;       "quantity": 1
+;     },
+;     {
+;       "type": "maple n' bacon",
+;       "quantity": 2
+;     }
+;   ],
+;   "coffee": true,
+;   "price": {
+;     "unit": "USD",
+;     "quantity": 5.00
+;   }
+; }
+;
+; Paths / Values
+; 
+; "donuts.type" -> "glazed"
+; "donuts.quantity" -> 1
+; "donuts.type" -> "maple n' bacon"
+; "donuts.quantity" -> 2
+; "coffee" -> true
+; "price.unit" -> "USD"
+; "price.quantity" -> 5.00
+;
+; Assuming the document is at position / office 1
+; The index after inserting this document would look like this:
+;
+; {:donuts
+;   {:type
+;    #:centripetal-indicators-service.db{:values
+;                                        {"glazed" #{0},
+;                                         "maple n' bacon" #{0}}},
+;    :quantity
+;    #:centripetal-indicators-service.db{:values {1 #{0}, 2 #{0}}}},
+;  :coffee #:centripetal-indicators-service.db{:values {true #{0}}},
+;  :price {:unit #:centripetal-indicators-service.db{:values {"USD" #{0}}},
+;          :quantity #:centripetal-indicators-service.db{:values {5.0 #{0}}}}} 
+;
+; The goal is to find all the documents that match a (path, value) combination
+; quickly without scanning each document.
 
 (defn index-paths-from-json-value
   ([v] (index-paths-from-json-value [] v))
@@ -48,7 +102,13 @@
   [index path v]
   (get-in index (concat path [::values v])))
 
-; simple matching language
+; Basic query language. See README.md and 
+; centripetal-indicators-service.db-test for examples. Execution is done via
+; a recursive algorithm. The base case is the `=` operator which will return
+; a set of document positions (just the offset in the vector that holds all 
+; the documents. The other operators combines sets of positions. `and` does
+; set intersection. `or` does set union. `not` does set difference with the
+; set of all positions.
 
 (spec/def ::query.equals
   (spec/cat :op-token #(= "=" %)
