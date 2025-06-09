@@ -1,8 +1,8 @@
 # centripetal-indicators-service
 
-Simple web service that allows clients to do simple queries on an open source 
-intelligence feed of JSON documents provided by AlienVault OTX. The data is
-contained in the included file found at `resources/indicators.json`.
+Little web service that allows clients to do simple queries on an open source 
+intelligence feed of JSON documents from by AlienVault OTX. The data is
+contained in the file found at `resources/indicators.json`.
 
 ## HTTP API
 
@@ -14,7 +14,7 @@ contained in the included file found at `resources/indicators.json`.
 
 ### Query Parameters
 The `GET /indicators` endpoint accepts 0 or more query parameters. Parameters
-take the form of `path=value`. The `path` part is a path to a value in a JSON 
+take the form of `path=value`. The `path` is a path to a value in a JSON 
 document in the data set. The `value` is the value to match. Parameters are 
 combined in the usual way with a `&`. Documents that match all parameters are
 returned. 
@@ -28,14 +28,14 @@ of `"green"` and a at least one sub document in the array found at the
 `"indicators"` key that has a `"type"` key with the value of `IPv4`.
 
 ### Query Language
-A simple matching language that encoded in JSON. When a query written in this
-language is sent as an HTTP request body to the `POST /indicators` endpoint the
-service will return all documents that match.
+A simple matching language encoded in JSON is provided for search capabilities.
+When a query written in this language is sent as an HTTP request body to the 
+`POST /indicators` endpoint the service will return all documents that match.
 
 The language supports 4 operators. 
 * `=` for matching a path / value combination, see the "Query Parameters"
   section.
-* `not` negates any expression
+* `not` negates an expression
 * `and` takes one or more expression. Documents much match all given
   expressions to match.
 * `or` takes one or more expressions. Documents much match at least one
@@ -47,7 +47,7 @@ Examples:
 ["=" "tlp" "green"]
 ```
 
-Just negate the last example
+Negate the last example
 ```
 ["not" ["=" "tlp" "green"]]
 ```
@@ -90,22 +90,32 @@ not = "[" "not" bool-exp "]"
 ```
 
 ## Running tests
-    $ lein test
+```
+$ lein test
+```
 
 ## Running the service 
 
 REPL:
-    $ lein repl
+```
+$ lein repl
+```
 
 Run Locally with Leiningen
-    $ lein run
+```
+$ lein run
+```
 
 Build Docker Image
-    $ ./docker-build.sh
+```
+$ ./docker-build.sh
+```
 
 Run Locally with Docker
-    $ ./docker-build.sh
-    $ ./docker-run.sh
+```
+$ ./docker-build.sh
+$ ./docker-run.sh
+```
 
 ## License
 
