@@ -1,25 +1,85 @@
 # centripetal-indicators-service
 
-FIXME: description
+Simple web service that allows clients to do simple queries on an open source 
+intelligence feed of JSON documents provided by AlienVault OTX. The data is
+contained in the included file found at `resources/indicators.json`.
 
-## Installation
+## HTTP API
 
-Download from http://example.com/FIXME.
+| method | url             | description                                      |
+|--------|-----------------|--------------------------------------------------|
+| GET    | /indicators     | With no query parameters all documents are returned. To limit which documents are returned query parameters can be provided. See "Query Parameters" section. |
+| GET    | /indicators/:id | Returns a single document that is identified by the given id. |  
+| POST   | /indicators     | Return documents that match the query provided in the body encoded in JSON. See "Query Language" section. | 
 
-## Usage
+### Query Parameters
+The `GET /indicators` endpoint accepts 0 or more query parameters. Parameters
+take the form of `path=value`. The `path` part is a path to a value in a JSON 
+document in the data set. The `value` is the value to match. Parameters are 
+combined in the usual way with a `&`. Documents that match all parameters are
+returned. 
 
-FIXME: explanation
+Example:
 
-    $ java -jar centripetal-indicators-service-0.1.0-standalone.jar [args]
+`?tlp=green&indicators.type=IPv4` 
 
-## Options
+This query matches documents that have a top level key of `"tlp"` with a value
+of `"green"` and a at least one sub document in the array found at the
+`"indicators"` key that has a `"type"` key with the value of `IPv4`.
 
-FIXME: listing of options this app accepts.
+### Query Language
+A simple matching language that encoded in JSON. When a query written in this
+language is sent as an HTTP request body to the `POST /indicators` endpoint the
+service will return all documents that match.
 
-## Query Language
+The language supports 4 operators. 
+* `=` for matching a path / value combination, see the "Query Parameters"
+  section.
+* `not` negates any expression
+* `and` takes one or more expression. Documents much match all given
+  expressions to match.
+* `or` takes one or more expressions. Documents much match at least one
+  expression to match.
 
-### Grammar
+Examples:
+
 ```
+["=" "tlp" "green"]
+```
+
+Just negate the last example
+```
+["not" ["=" "tlp" "green"]]
+```
+
+Same as the query parameter example from above:
+```
+["and" 
+ ["=" "tlp" "green"]
+ ["=" "indicators.type" "IPv4"]]
+```
+
+Matches all documents that have a tag of `"elastichoney"` or a tag of 
+`"conpot"`:
+```
+["or" 
+ ["=" "tags" "elastichoney"]
+ ["=" "tags" "conpot"]]
+```
+
+Expressions are composable:
+```
+["and"
+ ["not" ["=" "tlp" "green"]]
+ ["or" 
+  ["=" "tags" "elastichoney"]
+  ["=" "tags" "conpot"]]]
+```
+
+#### Grammar
+```
+query = bool-exp
+bool-exp = equals | or | and | not
 equals = "[" "=" path value "]"
 value = "true" | "false" | number | string
 path = json-key | json-key "." path 
@@ -27,9 +87,25 @@ json-key = string
 or = "[" "or" bool-exp+ "]" 
 and = "[" "and" bool-exp+ "]" 
 not = "[" "not" bool-exp "]"
-bool-exp = equals | or | and | not
-query = bool-exp
 ```
+
+## Running tests
+    $ lein test
+
+## Running the service 
+
+REPL:
+    $ lein repl
+
+Run Locally with Leiningen
+    $ lein run
+
+Build Docker Image
+    $ ./docker-build.sh
+
+Run Locally with Docker
+    $ ./docker-build.sh
+    $ ./docker-run.sh
 
 ## License
 
