@@ -1,9 +1,11 @@
 (ns centripetal-indicators-service.db-test
   (:require [centripetal-indicators-service.db :as db]
             [clojure.java.io :as io]
-            
             [clojure.test :refer [deftest testing is use-fixtures]]
-            [com.stuartsierra.component :as component]))
+            [com.stuartsierra.component :as component])
+  (:import [clojure.lang ExceptionInfo]))
+
+(set! *warn-on-reflection* true)
 
 (def ^:dynamic *db* nil)
 
@@ -11,7 +13,7 @@
   [tests]
   (binding [*db* (-> (db/json-file-db (io/resource "indicators.json"))
                      component/start)]
-    (try 
+    (try
       (tests)
       (finally
         (component/stop *db*)))))
@@ -34,13 +36,13 @@
              [[:b :c] 2]
              [[:b :d] "donuts"]}
            (set (db/index-paths-from-json-value {:a 1
-                                                 :b {:c 2 
+                                                 :b {:c 2
                                                      :d "donuts"}}))))
     (is (= #{[[:a] 1]
              [[:b :c] 2]
              [[:b :d :food] "donuts"]}
            (set (db/index-paths-from-json-value {:a 1
-                                                 :b {:c 2 
+                                                 :b {:c 2
                                                      :d {:food "donuts"}}})))))
   (testing "arrays"
     (is (= #{[[:a] 1]
@@ -51,7 +53,7 @@
     (is (= #{[[:a :b] 1]
              [[:a :b] 2]}
            (set (db/index-paths-from-json-value {:a {:b [1 2]}}))))
-    (is (= #{[[:a :a] 3 ]
+    (is (= #{[[:a :a] 3]
              [[:a :b] 4]}
            (set (db/index-paths-from-json-value {:a [{:a 3} {:b 4}]}))))
     (is (= #{[[:a :b :c] 1]
@@ -69,7 +71,12 @@
 
 (deftest test-parse-query
   (testing "throws on invalid query"
-    (is (thrown? IllegalArgumentException (db/parse-query ""))))
+    (is (thrown? ExceptionInfo (db/parse-query "donuts")))
+    (try
+      (db/parse-query "donuts")
+      (is false)
+      (catch Exception ex
+        (is (db/invalid-query-exception? ex)))))
   (testing "single field equality"
     (let [query ["=" "indicators.type" "IPv4"]]
       (is (= [:equals {:op-token "="
@@ -84,10 +91,10 @@
                                     :value [:string "IPv4"]}]}]
              (db/parse-query query)))))
   (testing "and operator"
-    (let [query ["and" 
+    (let [query ["and"
                  ["=" "indicators.type" "IPv4"]
                  ["=" "tlp" "green"]]]
-      (is (= [:and {:op-token "and" 
+      (is (= [:and {:op-token "and"
                     :operands [[:equals {:op-token "="
                                          :path [:indicators :type]
                                          :value [:string "IPv4"]}]
@@ -96,16 +103,16 @@
                                          :value [:string "green"]}]]}]
              (db/parse-query query)))))
   (testing "or operator"
-    (let [query ["or" 
+    (let [query ["or"
                  ["=" "indicators.type" "IPv4"]
                  ["=" "tlp" "green"]]]
-      (is (= [:or {:op-token "or" 
-                    :operands [[:equals {:op-token "="
-                                         :path [:indicators :type]
-                                         :value [:string "IPv4"]}]
-                               [:equals {:op-token "="
-                                         :path [:tlp]
-                                         :value [:string "green"]}]]}]
+      (is (= [:or {:op-token "or"
+                   :operands [[:equals {:op-token "="
+                                        :path [:indicators :type]
+                                        :value [:string "IPv4"]}]
+                              [:equals {:op-token "="
+                                        :path [:tlp]
+                                        :value [:string "green"]}]]}]
              (db/parse-query query))))))
 
 (deftest test-exec-query
@@ -117,9 +124,9 @@
         (is (= #{"green"} (into #{} (map :tlp) results))))
       (let [query ["=" "indicators.type" "IPv4"]
             results (db/exec-query db-data query)
-            types (map #(into #{} 
-                              (map :type) 
-                              (:indicators %)) 
+            types (map #(into #{}
+                              (map :type)
+                              (:indicators %))
                        results)]
         (is (= 69 (count results)))
         (is (every? #(contains? % "IPv4") types))))
@@ -130,32 +137,34 @@
         (is (= 17 (count results)))
         (is (not (contains? tlps "green")))))
     (testing "and"
-      (let [query ["and" 
+      (let [query ["and"
                    ["=" "tlp" "green"]
                    ["=" "indicators.type" "IPv4"]]
             results (db/exec-query db-data query)
-            tlps (into #{} (map :tlp) results) 
-            types (map #(into #{} 
-                              (map :type) 
-                              (:indicators %)) 
+            tlps (into #{} (map :tlp) results)
+            types (map #(into #{}
+                              (map :type)
+                              (:indicators %))
                        results)]
         (is (= 65 (count results)))
         (is (= #{"green"} tlps))
         (is (every? #(contains? % "IPv4") types))))
     (testing "or"
-      (let [query ["or" 
+      (let [query ["or"
                    ["=" "tlp" "green"]
                    ["=" "indicators.type" "IPv4"]]
             results (db/exec-query db-data query)
             slimed-results (map (fn [{:keys [tlp indicators]}]
-                                  {:tlp tlp 
+                                  {:tlp tlp
                                    :types (into #{} (map :type) indicators)})
                                 results)]
         (is (= 87 (count results)))
         (is (every? (fn [{:keys [tlp types]}]
                       (or (= tlp "green")
                           (contains? types "IPv4")))
-                    slimed-results))))))
+                    slimed-results))))
+    (testing "valid query with path that doesn't exist"
+      (is (empty? (db/exec-query db-data ["=" "food.donuts.type" "raised"]))))))
 
 (deftest test-find-docs
   (let [query ["=" "tlp" "green"]

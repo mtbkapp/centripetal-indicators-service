@@ -1,11 +1,10 @@
 (ns centripetal-indicators-service.http-test
-  (:require [centripetal-indicators-service.http :as http]
-            [centripetal-indicators-service.system :as system]
+  (:require [centripetal-indicators-service.system :as system]
             [cheshire.core :as json]
             [clojure.test :refer [deftest testing is use-fixtures]]
             [com.stuartsierra.component :as component]
-            [io.pedestal.test :as ped-test]
-            [io.pedestal.http :as ped-http]))
+            [io.pedestal.http :as ped-http]
+            [io.pedestal.test :as ped-test]))
 
 (def ^:dynamic *service-fn* nil)
 
@@ -18,35 +17,47 @@
                                  :server
                                  ::ped-http/service-fn)]
         (tests))
-      (finally 
+      (finally
         (component/stop *test-system*)))))
 
 (use-fixtures :once test-system-fixture)
 
-(defn http-get 
-  [url]
-  (let [resp (ped-test/response-for *service-fn* :get url)]
-    (cond-> resp
-      (= 200 (:status resp))
-      (update :body #(json/parse-string % true)))))
+(defn decode-body
+  [{:keys [status] :as response}]
+  (cond-> response
+    (#{400 200} status)
+    (update :body #(json/parse-string % true))))
 
-(def expected-doc-keys 
-  #{:adversary 
-    :author_name 
-    :created 
-    :description 
-    :extract_source 
-    :id 
-    :indicators 
-    :industries 
-    :modified 
-    :more_indicators 
-    :name 
-    :public 
+(defn http-get
+  [url]
+  (-> (ped-test/response-for *service-fn* :get url)
+      decode-body))
+
+(defn http-post
+  [url body]
+  (-> (ped-test/response-for *service-fn*
+                             :post url
+                             :body (json/generate-string body)
+                             :headers {"Content-Type" "application/json"})
+      decode-body))
+
+(def expected-doc-keys
+  #{:adversary
+    :author_name
+    :created
+    :description
+    :extract_source
+    :id
+    :indicators
+    :industries
+    :modified
+    :more_indicators
+    :name
+    :public
     :references
-    :revision 
-    :tags 
-    :targeted_countries 
+    :revision
+    :tags
+    :targeted_countries
     :tlp})
 
 (deftest test-find-by-id
@@ -59,7 +70,7 @@
       (doseq [expected-k expected-doc-keys]
         (is (contains? body expected-k)))))
   (testing "given id does not identify a doc"
-    (let [{:keys [status] :as r} (http-get "/indicators/doughnuts")]
+    (let [{:keys [status]} (http-get "/indicators/doughnuts")]
       (is (= 404 status)))))
 
 (deftest test-get-all
@@ -70,8 +81,50 @@
     (doseq [doc body]
       (is (= expected-doc-keys (set (keys doc)))))))
 
-(deftest test-get-with-query-params
-  (let [{:keys [body status headers]} (http-get "/indicators?indicators.type=IP4")]
-    
-    ))
+(deftest test-find-with-params
+  (testing "single params"
+    (let [{:keys [body status headers]} (http-get "/indicators?indicators.type=IPv4")]
+      (is (= 200 status))
+      (is (= "application/json" (get headers "Content-Type")))
+      (is (= 69 (count body)))
+      (is (every? #(contains? % "IPv4")
+                  (map #(into #{}
+                              (map :type)
+                              (:indicators %))
+                       body)))
+      (doseq [doc body]
+        (is (= expected-doc-keys (set (keys doc)))))))
+  (testing "multi param"
+    (let [{:keys [body status headers]} (http-get "/indicators?indicators.type=IPv4&tlp=green")]
+      (is (= 200 status))
+      (is (= "application/json" (get headers "Content-Type")))
+      (is (= 65 (count body)))
+      (is (every? #(contains? % "IPv4")
+                  (map #(into #{}
+                              (map :type)
+                              (:indicators %))
+                       body)))
+      (is (= #{"green"} (into #{} (map :tlp) body)))
+      (doseq [doc body]
+        (is (= expected-doc-keys (set (keys doc))))))))
+
+(deftest test-search
+  (testing "valid query"
+    (let [{:keys [status body headers]} (http-post "/indicators/search"
+                                                   ["or"
+                                                    ["=" "tlp" "green"]
+                                                    ["=" "author_name" "AlienVault"]])]
+      (is (= 200 status))
+      (is (= 93 (count body)))
+      (is (= "application/json" (get headers "Content-Type")))
+      (doseq [doc body]
+        (is (or (= "green" (:tlp doc))
+                (= "AlienVault" (:author_name doc))))
+        (is (= expected-doc-keys (set (keys doc)))))))
+  (testing "invalid query"
+    (let [{:keys [status body]} (http-post "/indicators/search"
+                                           ["dounts"])]
+      (is (= 400 status))
+      (is (= "invalid-query" (:type body)))
+      (is (contains? body :explain-data)))))
 

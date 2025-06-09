@@ -1,11 +1,13 @@
 (ns centripetal-indicators-service.db
   (:require [cheshire.core :as json]
-            [clojure.java.io :as io]
             [clojure.set :as sets]
             [clojure.spec.alpha :as spec]
             [clojure.string :as string]
             [clojure.tools.logging :as log]
-            [com.stuartsierra.component :as component]))
+            [com.stuartsierra.component :as component])
+  (:import [clojure.lang ExceptionInfo]))
+
+(set! *warn-on-reflection* true)
 
 ; like PostgreSQLs Generialized Inverted Indexes (GIN)
 
@@ -37,8 +39,8 @@
   [docs]
   (transduce (map-indexed vector)
              (completing
-               (fn [idx [position doc]]
-                 (add-doc-to-index idx doc position)))
+              (fn [idx [position doc]]
+                (add-doc-to-index idx doc position)))
              {}
              docs))
 
@@ -56,8 +58,8 @@
 (spec/def ::query.path
   (spec/and string?
             (spec/conformer
-              (fn [path]
-                (map keyword (string/split path #"\."))))))
+             (fn [path]
+               (map keyword (string/split path #"\."))))))
 
 (spec/def ::query.value
   (spec/or :bool boolean?
@@ -88,12 +90,19 @@
   [query]
   (let [parsed (spec/conform ::query query)]
     (if (= ::spec/invalid parsed)
-      (throw (IllegalArgumentException. "Invalid query"))
+      (throw (ex-info "invalid query"
+                      {:type "invalid-query"
+                       :explain-data (spec/explain-data ::query query)}))
       parsed)))
+
+(defn invalid-query-exception?
+  [ex]
+  (and (instance? ExceptionInfo ex)
+       (= "invalid-query" (:type (ex-data ex)))))
 
 (def exec-query* nil)
 (defmulti exec-query*
-  (fn [db-data [op :as parsed-query]]
+  (fn [_db-data [op :as _parsed-query]]
     op))
 
 (defmethod exec-query* :equals
@@ -126,7 +135,7 @@
   (find-docs [db query]))
 
 (defrecord JsonFileDb
-  [json-file data]
+           [json-file data]
   component/Lifecycle
   (start [this]
     (log/info "database starting")

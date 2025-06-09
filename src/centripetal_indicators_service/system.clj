@@ -10,12 +10,12 @@
 (defn build-system
   []
   (component/system-map
-    :http (component/using (http/pedestal-http-server (:port config/env))
-                           [:db])
-    :db (db/json-file-db (io/resource "indicators.json"))))
+   :http (component/using (http/pedestal-http-server (:port config/env))
+                          [:db])
+   :db (db/json-file-db (io/resource "indicators.json"))))
 
 (defn -main
-  [& args]
+  [& _args]
   (log/info "system starting")
   (let [system (-> (build-system)
                    (component/start))]
@@ -25,7 +25,5 @@
 ; TODO a better way to change things at the repl?
 (comment
   (def s (-main))
-  (component/stop s)
-  
-  )
+  (component/stop s))
 
