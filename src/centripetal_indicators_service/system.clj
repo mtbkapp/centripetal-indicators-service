@@ -10,14 +10,14 @@
 (defn build-system
   []
   (component/system-map
-   :http (component/using (http/pedestal-http-server 
-                            (:host config/env)
-                            (:port config/env))
+   :http (component/using (http/pedestal-http-server
+                           (:host config/env)
+                           (:port config/env))
                           [:db])
    :db (db/json-file-db (io/resource "indicators.json"))))
 
 (defn -main
-  [& args]
+  [& _args]
   (log/info "system starting")
   (let [system (-> (build-system)
                    (component/start))]
