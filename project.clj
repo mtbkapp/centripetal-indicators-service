@@ -24,7 +24,8 @@
             [dev.weavejester/lein-cljfmt "0.13.1"]]
   :main ^:skip-aot centripetal-indicators-service.system
   :target-path "target/%s"
-  :profiles {:dev {:jvm-opts ["-DPORT=8890"]}
+  :profiles {:dev {:jvm-opts ["-DPORT=8890"
+                              "-DHOST=localhost"]}
              :uberjar {:aot :all
                        :jvm-opts ["-Dclojure.compiler.direct-linking=true"]}})
 

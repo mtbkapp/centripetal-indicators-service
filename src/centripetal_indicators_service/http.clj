@@ -95,14 +95,14 @@
        ["/indicators/:id" :get [db-injector handle-find-by-id]]
        ["/indicators/search" :post [db-injector decode-json-body handle-search]]})))
 
-(defrecord PedestalHttpServer
-           [port db server]
+(defrecord PedestalHttpServer [host port db server]
   component/Lifecycle
   (start [this]
     (log/info "pedestal http server starting")
     (let [server (-> {::http/routes (build-routes db)
                       ::http/router :linear-search
                       ::http/type :jetty
+                      ::http/host host
                       ::http/port port
                       ::http/join? false}
                      http/create-server
@@ -114,5 +114,5 @@
     (assoc this :server nil :db nil)))
 
 (defn pedestal-http-server
-  [port]
-  (map->PedestalHttpServer {:port port}))
+  [host port]
+  (map->PedestalHttpServer {:host host :port port}))
