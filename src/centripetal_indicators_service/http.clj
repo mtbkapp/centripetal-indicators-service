@@ -58,7 +58,12 @@
     (json-response context ok-status (db/find-docs db query))
     (catch ExceptionInfo ex
       (if (db/invalid-query-exception? ex)
-        (json-response context bad-input-status (ex-data ex))
+        (do
+          (log/info "Invalid search query" {:query query
+                                            :spec-error (ex-data ex)})
+          (json-response context
+                         bad-input-status
+                         {:errors ["Invalid query input"]}))
         (throw ex)))))
 
 (def handle-find-with-params
@@ -70,15 +75,29 @@
          (json-response context ok-status (db/get-all db))
          (find-docs context db (query-from-params query-params)))))})
 
+(defn parse-json-eager
+  [http-input]
+  (with-open [rdr (io/reader http-input)]
+    (doall (json/parse-stream rdr true))))
+
 (def decode-json-body
   {:name :decode-json-body
    :enter
    (fn [context]
      (let [content-type (get-in context [:request :headers "content-type"])]
-       (cond-> context
-         (#{"text/json" "application/json"} content-type)
-         (update-in [:request :body]
-                    #(json/parse-stream (io/reader %) true)))))})
+       (if (#{"text/json" "application/json"} content-type)
+         (try
+           (update-in context
+                      [:request :body]
+                      parse-json-eager)
+           (catch Exception ex
+             (log/info "recieved invalid json" ex)
+             (json-response context
+                            bad-input-status
+                            {:errors ["Invalid JSON"]})))
+         (json-response context
+                        bad-input-status
+                        {:errors ["Unsupported Content-Type. text/json and application/json are supported"]}))))})
 
 (def handle-search
   {:name :handle-search
