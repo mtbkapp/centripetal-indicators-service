@@ -34,12 +34,18 @@
       decode-body))
 
 (defn http-post
-  [url body]
+  [url body headers]
   (-> (ped-test/response-for *service-fn*
                              :post url
-                             :body (json/generate-string body)
-                             :headers {"Content-Type" "application/json"})
+                             :body body
+                             :headers headers)
       decode-body))
+
+(defn http-post-json
+  [url body]
+  (http-post url
+             (json/generate-string body)
+             {"Content-Type" "application/json"}))
 
 (def expected-doc-keys
   #{:adversary
@@ -110,10 +116,10 @@
 
 (deftest test-search
   (testing "valid query"
-    (let [{:keys [status body headers]} (http-post "/indicators/search"
-                                                   ["or"
-                                                    ["=" "tlp" "green"]
-                                                    ["=" "author_name" "AlienVault"]])]
+    (let [{:keys [status body headers]} (http-post-json "/indicators/search"
+                                                        ["or"
+                                                         ["=" "tlp" "green"]
+                                                         ["=" "author_name" "AlienVault"]])]
       (is (= 200 status))
       (is (= 93 (count body)))
       (is (= "application/json" (get headers "Content-Type")))
@@ -122,9 +128,30 @@
                 (= "AlienVault" (:author_name doc))))
         (is (= expected-doc-keys (set (keys doc)))))))
   (testing "invalid query"
-    (let [{:keys [status body]} (http-post "/indicators/search"
-                                           ["dounts"])]
+    (let [{:keys [status body]} (http-post-json "/indicators/search"
+                                                ["dounts"])]
       (is (= 400 status))
-      (is (= "invalid-query" (:type body)))
-      (is (contains? body :explain-data)))))
+      (is (= {:errors ["Invalid query input"]} body))))
+  (testing "invalid Content-Type"
+    (testing "no content type"
+      (let [{:keys [status body]} (http-post "/indicators/search"
+                                             (json/generate-string ["=" "tlp" "green"])
+                                             {} ; no content-type specified
+                                             )]
+        (is (= 400 status))
+        (is (= {:errors ["Unsupported Content-Type. text/json and application/json are supported"]}
+               body))))
+    (testing "default curl content type"
+      (let [{:keys [status body]} (http-post "/indicators/search"
+                                             (json/generate-string ["=" "tlp" "green"])
+                                             {"Content-Type" "application/x-www-form-urlencoded"})]
+        (is (= 400 status))
+        (is (= {:errors ["Unsupported Content-Type. text/json and application/json are supported"]}
+               body)))))
+  (testing "invalid JSON, missing commas"
+    (let [{:keys [status body]} (http-post "/indicators/search"
+                                           "[\"=\" \"tlp\" \"green\"]"
+                                           {"Content-Type" "text/json"})]
+      (is (= 400 status))
+      (is (= {:errors ["Invalid JSON"]} body)))))
 

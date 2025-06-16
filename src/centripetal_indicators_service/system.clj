@@ -24,7 +24,6 @@
     (log/info "system done starting")
     system))
 
-; TODO a better way to change things at the repl?
 (comment
   (def s (-main))
   (component/stop s))
